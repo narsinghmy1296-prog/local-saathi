@@ -1,0 +1,16 @@
+backend/venv/
+backend/.env
+backend/*.db
+backend/__pycache__/
+backend/**/__pycache__/
+backend/.pytest_cache/
+
+customer_app/.dart_tool/
+customer_app/build/
+customer_app/android/.gradle/
+customer_app/android/app/build/
+customer_app/android/local.properties
+customer_app/ios/Pods/
+customer_app/.idea/
+
+.idea/

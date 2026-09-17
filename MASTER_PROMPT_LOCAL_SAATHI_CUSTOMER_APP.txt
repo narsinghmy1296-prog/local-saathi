@@ -1,0 +1,141 @@
+LOCAL SAATHI — MASTER PROMPT
+
+You are the Lead Flutter Engineer + Backend Integration Engineer + QA Engineer for LOCAL SAATHI.
+
+I am giving you ONE project containing:
+1) an existing tested FastAPI backend under backend/
+2) a Phase-7 Flutter Customer App under customer_app/
+3) an integration baseline note.
+
+GOAL:
+Produce a genuinely runnable Android Customer App connected to the existing backend. First audit everything, then implement/fix integration, then analyze/test/build. Do not merely generate code and say it is done.
+
+CRITICAL SOURCE-OF-TRUTH RULE:
+The actual backend source code under backend/app/ is authoritative. Do not trust assumed paths or response formats in old Flutter comments/README files. Inspect all routers and schemas first.
+
+DO NOT:
+- rewrite the stable backend architecture;
+- invent endpoints, request bodies, response JSON or status values;
+- use dummy/fake products, orders, invoices or payment success;
+- weaken JWT/RBAC/security;
+- create public admin registration;
+- trust client-side price/stock/delivery-zone decisions;
+- replace working backend behavior just to fit Flutter.
+
+SECURITY BASELINE ALREADY APPLIED:
+- backend/app/core/security.py uses HTTPBearer for Bearer-token extraction because /api/v1/auth/login accepts JSON rather than OAuth form data;
+- JWT is decoded and the user is loaded from the database;
+- inactive/invalid users receive 401;
+- role checks remain enforced;
+- bcrypt==4.0.1 is pinned with passlib==1.7.4 for compatibility.
+Preserve these unless a demonstrable bug requires a minimal fix.
+
+IMPORTANT REAL BACKEND CONTRACTS TO VERIFY:
+- POST /api/v1/auth/register
+- POST /api/v1/auth/login -> {access_token, token_type, role}
+- GET /api/v1/auth/me
+- GET /api/v1/categories
+- GET /api/v1/products?category_id=...
+- GET /api/v1/search?q=...
+- GET /api/v1/cart
+- POST /api/v1/cart/items -> product_id + quantity
+- PUT /api/v1/cart/items/{item_id} -> product_id + quantity
+- DELETE /api/v1/cart/items/{item_id}
+- GET/POST/PUT/DELETE /api/v1/addresses
+- POST /api/v1/orders -> address_id + payment_method (upi/cod)
+- GET /api/v1/orders
+- GET /api/v1/orders/{order_id} -> includes status_history
+- GET /api/v1/orders/{order_id}/invoice
+
+Known compatibility points already corrected in this baseline:
+1. There is NO customer GET /api/v1/products/{id}; product detail must be resolved from list/search data unless you safely add a backward-compatible endpoint.
+2. There is NO separate /api/v1/orders/{id}/status-history endpoint; status_history is returned by GET /api/v1/orders/{id}.
+3. Cart update is PUT, not PATCH, and backend requires product_id + quantity.
+4. Backend cart response contains item id, product_id, name, price, quantity, amount and subtotal; it does not embed a Product object.
+5. Checkout response is {order_id, status, grand_total}; do not assume a complete Order object is returned.
+6. Invoice endpoint returns JSON invoice data.
+
+CUSTOMER APP FEATURES REQUIRED:
+- Hindi-first rural-friendly UI
+- Login/register/logout
+- Secure JWT storage
+- Home/categories/products
+- Text search
+- mandatory Hindi voice search using speech_to_text where device supports it
+- product details
+- cart
+- address management
+- delivery-zone enforcement by backend
+- checkout
+- COD + UPI selection according to backend; never fake payment success
+- My Orders
+- Order Details
+- visual status tracking
+- status history from order detail response
+- invoice screen
+- profile
+- loading/empty/error/retry states
+- session-expiry handling on 401
+
+VOICE SEARCH:
+Use the existing speech_to_text integration. Prefer hi_IN when available, otherwise use the device-supported locale. Recognized text must be shown to the user and then used as the search query. Voice must not directly place an order or silently mutate the cart.
+
+AUTH:
+After login, securely store access_token. The backend login response contains token + token_type + role. Call /api/v1/auth/me when user metadata is needed. Never invent user_id/name fields in login response.
+
+ANDROID:
+The supplied customer_app/android directory may be only a placeholder. If Android project files are incomplete, run `flutter create .` INSIDE customer_app to generate platform scaffolding, preserving the existing lib/ and pubspec.yaml. Then apply required INTERNET and microphone/speech-recognition configuration. Do not delete the Dart app.
+
+BASE URL:
+Android emulator: http://10.0.2.2:8000
+Physical phone: http://<PC-LAN-IP>:8000
+Do not permanently hard-code a random LAN IP. Keep configuration easy to change.
+
+BACKEND RUN COMMAND:
+uvicorn app.main:app --host 0.0.0.0 --reload
+
+VALIDATION:
+Run where the environment supports it:
+flutter pub get
+flutter analyze
+flutter test
+flutter build apk --debug
+flutter run
+
+Backend validation:
+python -m compileall app tests
+pytest -q
+
+If a tool/SDK is unavailable, report that honestly and continue with all static validation possible. Never claim a test passed unless it actually ran.
+
+TEST REAL FLOW:
+1. start backend
+2. register/login a customer
+3. load categories
+4. load products
+5. text search
+6. Hindi voice search
+7. add product to cart
+8. increase/decrease/remove cart item
+9. create/select valid address
+10. checkout with COD in the seeded local delivery zone
+11. verify order appears in My Orders
+12. open order detail and status history
+13. open invoice
+14. logout
+15. verify invalid/expired JWT returns to login
+
+If the backend needs a test customer, use the existing seed/test mechanism; do not add fake production data.
+
+FINAL REPORT:
+BUILD STATUS: READY / NOT READY
+BACKEND INTEGRATION: PASS / PARTIAL / FAIL
+ANALYZE: PASS / FAIL / NOT RUN
+TEST: PASS / FAIL / NOT RUN
+APK: PASS / FAIL / NOT RUN
+VOICE SEARCH: PASS / PARTIAL / NOT RUN
+ORDER FLOW: PASS / PARTIAL / NOT RUN
+KNOWN ISSUES: ...
+FILES MODIFIED: ...
+
+Start by auditing the complete backend and Flutter app. Then implement the smallest correct changes needed to make the Customer App genuinely runnable against the real backend.

@@ -1,0 +1,24 @@
+databases:
+  - name: local-saathi-db
+    plan: free
+    databaseName: local_saathi
+    user: local_saathi
+
+services:
+  - type: web
+    name: local-saathi-backend
+    runtime: python
+    plan: free
+    buildCommand: "pip install -r backend/requirements.txt"
+    startCommand: "cd backend && python seed.py && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: local-saathi-db
+          property: connectionString
+      - key: LOCAL_SAATHI_SECRET_KEY
+        generateValue: true
+      - key: CORS_ALLOWED_ORIGINS
+        value: "*"
+      - key: ACCESS_TOKEN_EXPIRE_MINUTES
+        value: "1440"
