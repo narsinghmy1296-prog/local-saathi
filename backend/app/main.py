@@ -4,10 +4,11 @@ from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
+from fastapi.staticfiles import StaticFiles
 
 from app.core.config import settings
 from app.core.database import Base, engine
-from app.routers import auth, categories, products, search, cart, addresses, orders, delivery, admin
+from app.routers import auth, categories, products, search, cart, addresses, orders, delivery, admin, sellers, uploads
 
 logger = logging.getLogger("local_saathi")
 logging.basicConfig(level=logging.INFO)
@@ -63,6 +64,14 @@ app.include_router(addresses.router)
 app.include_router(orders.router)
 app.include_router(delivery.router)
 app.include_router(admin.router)
+app.include_router(sellers.router)
+app.include_router(uploads.router)
+
+# Serves uploaded product images back out (see app/routers/uploads.py).
+# NEW — no static file serving existed before this pass.
+import os
+os.makedirs("static/products", exist_ok=True)
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 
 @app.get("/")

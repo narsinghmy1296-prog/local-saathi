@@ -1,0 +1,43 @@
+name: local_saathi_seller
+description: Local Saathi — Seller Android App (Phase 2)
+publish_to: "none"
+version: 0.1.0
+
+environment:
+  sdk: ">=3.0.0 <4.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.6
+
+  # State management (same pattern as customer_app)
+  provider: ^6.1.2
+
+  # Networking
+  http: ^1.2.2
+
+  # Secure JWT storage
+  flutter_secure_storage: ^9.2.2
+
+  # Small key/value cache (locale pref)
+  shared_preferences: ^2.3.2
+
+  # Formatting (currency, dates)
+  intl: ^0.19.0
+
+  # Product photo capture/pick, for POST /uploads/product-image
+  image_picker: ^1.1.2
+
+  # Needed to set the multipart file's Content-Type when uploading a
+  # product photo (transitive via `http`, declared explicitly since we
+  # import it directly in api_client.dart).
+  http_parser: ^4.0.2
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^4.0.0
+
+flutter:
+  uses-material-design: true

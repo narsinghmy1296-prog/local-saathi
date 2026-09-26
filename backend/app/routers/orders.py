@@ -217,6 +217,24 @@ def order_detail(order_id: int, db: Session = Depends(get_db), user: User = Depe
         "status_history": [
             {"status": h.status.value, "timestamp": h.timestamp.isoformat()} for h in order.status_history
         ],
+        # FIX (Seller App audit): _assert_order_visible above already limits
+        # who can even reach this endpoint to the order's own
+        # customer/seller/delivery-partner/admin — so it's safe to always
+        # include the customer's name/mobile/delivery-address here. Without
+        # this, a seller had NO way to see who/where to prepare an order
+        # for, which blocks the seller's entire order-fulfillment workflow.
+        # Purely additive — no existing field renamed or removed.
+        "customer": {
+            "name": order.customer.name if order.customer else None,
+            "phone": order.customer.phone if order.customer else None,
+        },
+        "address": {
+            "village_town": order.address.village_town,
+            "house": order.address.house,
+            "landmark": order.address.landmark,
+            "pincode": order.address.pincode,
+            "mobile": order.address.mobile,
+        } if order.address else None,
     }
 
 

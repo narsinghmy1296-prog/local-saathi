@@ -389,3 +389,185 @@ def test_admin_can_access_dashboard(client):
     resp = client.get("/api/v1/admin/dashboard", headers=admin_h)
     assert resp.status_code == 200
     assert "orders" in resp.json()
+
+
+# ---------------------------------------------------------------------------
+# Admin seller/delivery-partner management (added for Admin Web Panel work —
+# these endpoints did not exist before this pass; _make_approved_seller above
+# previously had no way to even list sellers and worked around it with a
+# brute-force id loop, which this feature makes unnecessary going forward).
+# ---------------------------------------------------------------------------
+
+def test_admin_can_list_and_filter_sellers(client):
+    register_and_login(
+        client, "9500000001", "Seller List Test", "seller",
+        shop_name="Shop X", owner_name="Owner X", area="Village Z",
+    )
+    admin_h = admin_headers(client)
+
+    pending = client.get("/api/v1/admin/sellers", params={"status": "pending"}, headers=admin_h)
+    assert pending.status_code == 200
+    matches = [s for s in pending.json() if s["shop_name"] == "Shop X"]
+    assert len(matches) == 1
+    seller = matches[0]
+    assert seller["is_approved"] is False
+    assert seller["phone"] == "9500000001"
+    assert seller["product_count"] == 0
+
+    approve_resp = client.post(f"/api/v1/admin/sellers/{seller['id']}/approve", headers=admin_h)
+    assert approve_resp.status_code == 200
+
+    approved = client.get("/api/v1/admin/sellers", params={"status": "approved"}, headers=admin_h)
+    assert any(s["id"] == seller["id"] for s in approved.json())
+
+
+def test_admin_reject_seller_disables_login(client):
+    seller_headers, _ = _make_approved_seller(client, phone="9500000002")
+    admin_h = admin_headers(client)
+
+    sellers = client.get("/api/v1/admin/sellers", headers=admin_h).json()
+    seller_row = next(s for s in sellers if s["phone"] == "9500000002")
+
+    reject_resp = client.post(f"/api/v1/admin/sellers/{seller_row['id']}/reject", headers=admin_h)
+    assert reject_resp.status_code == 200
+
+    # rejected seller can no longer log in
+    login_resp = client.post("/api/v1/auth/login", json={"phone": "9500000002", "password": "password123"})
+    assert login_resp.status_code == 403
+
+    # admin can re-activate the login without re-approving the shop
+    detail = client.get(f"/api/v1/admin/sellers/{seller_row['id']}", headers=admin_h).json()
+    assert detail["is_approved"] is False
+    activate_resp = client.post(f"/api/v1/admin/sellers/{seller_row['id']}/activate", headers=admin_h)
+    assert activate_resp.status_code == 200
+    login_resp2 = client.post("/api/v1/auth/login", json={"phone": "9500000002", "password": "password123"})
+    assert login_resp2.status_code == 200
+
+
+def test_admin_can_list_and_deactivate_delivery_partners(client):
+    register_and_login(client, "9500000003", "DP Test", "delivery", area="Village Z")
+    admin_h = admin_headers(client)
+
+    pending = client.get("/api/v1/admin/delivery-partners", params={"status": "pending"}, headers=admin_h).json()
+    dp = next(d for d in pending if d["phone"] == "9500000003")
+    assert dp["is_approved"] is False
+
+    client.post(f"/api/v1/admin/delivery-partners/{dp['id']}/approve", headers=admin_h)
+    client.post(f"/api/v1/admin/delivery-partners/{dp['id']}/deactivate", headers=admin_h)
+
+    login_resp = client.post("/api/v1/auth/login", json={"phone": "9500000003", "password": "password123"})
+    assert login_resp.status_code == 403
+
+
+def test_non_admin_cannot_list_sellers(client):
+    cust_headers = register_and_login(client, "9500000004", "Cust", "customer")
+    resp = client.get("/api/v1/admin/sellers", headers=cust_headers)
+    assert resp.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# Seller self-service profile + product image upload (added for Seller App)
+# ---------------------------------------------------------------------------
+
+def test_seller_can_view_and_update_own_profile(client):
+    seller_headers, _ = _make_approved_seller(client, phone="9600000001")
+
+    me = client.get("/api/v1/sellers/me", headers=seller_headers)
+    assert me.status_code == 200
+    assert me.json()["shop_name"] == "Shop One"
+    assert me.json()["is_approved"] is True
+
+    update = client.put("/api/v1/sellers/me", json={"shop_name": "Naya Shop Naam"}, headers=seller_headers)
+    assert update.status_code == 200
+    assert update.json()["shop_name"] == "Naya Shop Naam"
+    # unrelated fields unchanged
+    assert update.json()["area"] == "Village A"
+
+
+def test_seller_cannot_self_approve_via_profile_update(client):
+    """PUT /sellers/me must ignore/reject any attempt to set is_approved directly."""
+    seller_headers, _ = _make_approved_seller(client, phone="9600000002")
+    resp = client.put("/api/v1/sellers/me", json={"shop_name": "X", "is_approved": True}, headers=seller_headers)
+    assert resp.status_code == 200  # extra unknown field is just ignored by the schema
+    assert resp.json()["is_approved"] is True  # was already approved by admin, not by this call
+
+
+def test_customer_cannot_access_seller_profile_endpoint(client):
+    cust_headers = register_and_login(client, "9600000003", "Cust", "customer")
+    resp = client.get("/api/v1/sellers/me", headers=cust_headers)
+    assert resp.status_code == 403
+
+
+def test_seller_can_upload_product_image_and_use_it(client):
+    seller_headers, _ = _make_approved_seller(client, phone="9600000004")
+
+    fake_png = b"\x89PNG\r\n\x1a\n" + b"0" * 100  # minimal fake bytes, content-type is what's checked
+    resp = client.post(
+        "/api/v1/uploads/product-image",
+        files={"file": ("photo.png", fake_png, "image/png")},
+        headers=seller_headers,
+    )
+    assert resp.status_code == 200
+    image_url = resp.json()["image_url"]
+    assert image_url.startswith("/static/products/")
+
+    product_resp = client.post("/api/v1/products", json={
+        "name": "आम", "price": 40, "unit": "kg", "available_qty": 20, "image_url": image_url,
+    }, headers=seller_headers)
+    assert product_resp.status_code == 200
+    assert product_resp.json()["image_url"] == image_url
+
+
+def test_upload_rejects_non_image_file(client):
+    seller_headers, _ = _make_approved_seller(client, phone="9600000005")
+    resp = client.post(
+        "/api/v1/uploads/product-image",
+        files={"file": ("notes.txt", b"hello", "text/plain")},
+        headers=seller_headers,
+    )
+    assert resp.status_code == 400
+
+
+def test_unapproved_seller_cannot_upload_image(client):
+    headers = register_and_login(
+        client, "9600000006", "Pending Seller", "seller",
+        shop_name="Pending Shop", owner_name="P Owner", area="Village Q",
+    )
+    resp = client.post(
+        "/api/v1/uploads/product-image",
+        files={"file": ("photo.png", b"\x89PNG\r\n\x1a\n" + b"0" * 50, "image/png")},
+        headers=headers,
+    )
+    assert resp.status_code == 403
+
+
+def test_order_detail_includes_customer_and_address_for_seller(client):
+    """
+    FIX verified: a seller must be able to see who/where to prepare an
+    order for — GET /orders/{id} previously had no customer/address at
+    all in its response.
+    """
+    seller_headers, _ = _make_approved_seller(client, phone="9600000007")
+    product_resp = client.post("/api/v1/products", json={
+        "name": "शहद", "price": 150, "unit": "bottle", "available_qty": 5,
+    }, headers=seller_headers)
+    product_id = product_resp.json()["id"]
+
+    cust_headers = register_and_login(client, "9600000008", "Ravi Kumar", "customer")
+    client.post("/api/v1/cart/items", json={"product_id": product_id, "quantity": 1}, headers=cust_headers)
+    addr = client.post("/api/v1/addresses", json={
+        "name": "Ravi Kumar", "mobile": "9600000008", "village_town": "Ramgarh",
+        "house": "12", "landmark": "Mandir ke paas", "pincode": "110001",
+    }, headers=cust_headers)
+    address_id = addr.json()["id"]
+
+    order_resp = client.post("/api/v1/orders", json={"address_id": address_id, "payment_method": "cod"}, headers=cust_headers)
+    order_id = order_resp.json()["order_id"]
+
+    seller_view = client.get(f"/api/v1/orders/{order_id}", headers=seller_headers)
+    assert seller_view.status_code == 200
+    body = seller_view.json()
+    assert body["customer"]["name"] == "Ravi Kumar"
+    assert body["customer"]["phone"] == "9600000008"
+    assert body["address"]["village_town"] == "Ramgarh"
+    assert body["address"]["pincode"] == "110001"
